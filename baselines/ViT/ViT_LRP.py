@@ -1,14 +1,29 @@
 """ Vision Transformer (ViT) in PyTorch
 Hacked together by / Copyright 2020 Ross Wightman
 """
+
+
+import sys
+from pathlib import Path
+
+# Percorso assoluto alla cartella "modules" (sali di 2 livelli da ViT/ per raggiungere "Transformer-Explainability/")
+modules_dir = Path(__file__).resolve().parent.parent.parent / "modules"
+sys.path.append(str(modules_dir))
+
+
 import torch
 import torch.nn as nn
 from einops import rearrange
-from modules.layers_ours import *
+from layers_ours import *
 
 from baselines.ViT.helpers import load_pretrained
 from baselines.ViT.weight_init import trunc_normal_
 from baselines.ViT.layer_helpers import to_2tuple
+
+# from helpers import load_pretrained
+# from weight_init import trunc_normal_
+# from layer_helpers import to_2tuple
+
 
 
 def _cfg(url='', **kwargs):
@@ -200,7 +215,9 @@ class Block(nn.Module):
         x = self.add2([x1, self.mlp(self.norm2(x2))])
         return x
 
-    def relprop(self, cam, **kwargs):
+    def relprop(self, cam, start_layer=0, **kwargs):
+        print('\tlayer2: ',start_layer)
+
         (cam1, cam2) = self.add2.relprop(cam, **kwargs)
         cam2 = self.mlp.relprop(cam2, **kwargs)
         cam2 = self.norm2.relprop(cam2, **kwargs)
@@ -208,6 +225,8 @@ class Block(nn.Module):
 
         (cam1, cam2) = self.add1.relprop(cam, **kwargs)
         cam2 = self.attn.relprop(cam2, **kwargs)
+        print('cam2: ', len(cam2))
+
         cam2 = self.norm1.relprop(cam2, **kwargs)
         cam = self.clone1.relprop((cam1, cam2), **kwargs)
         return cam
@@ -322,14 +341,18 @@ class VisionTransformer(nn.Module):
         return x
 
     def relprop(self, cam=None,method="transformer_attribution", is_ablation=False, start_layer=0, **kwargs):
+        print('relprop layer', start_layer)
         # print(kwargs)
         # print("conservation 1", cam.sum())
+
         cam = self.head.relprop(cam, **kwargs)
         cam = cam.unsqueeze(1)
         cam = self.pool.relprop(cam, **kwargs)
         cam = self.norm.relprop(cam, **kwargs)
         for blk in reversed(self.blocks):
-            cam = blk.relprop(cam, **kwargs)
+            cam = blk.relprop(cam, start_layer, **kwargs)
+
+        # print('debug1: ', len(cam))
 
         # print("conservation 2", cam.sum())
         # print("min", cam.min())
@@ -353,20 +376,43 @@ class VisionTransformer(nn.Module):
             cam = cam[:, 0, 1:]
             return cam
         
-        # our method, method name grad is legacy
+        # # our method, method name grad is legacy
+        # elif method == "transformer_attribution" or method == "grad":
+        #     cams = []
+
+        #     print('cam: ', len(cam))
+        #     for blk in self.blocks:
+        #         grad = blk.attn.get_attn_gradients()
+        #         cam = blk.attn.get_attn_cam()
+        #         cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
+        #         grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
+        #         cam = grad * cam
+        #         cam = cam.clamp(min=0).mean(dim=0)
+        #         cams.append(cam.unsqueeze(0))
+        #     rollout = compute_rollout_attention(cams, start_layer=start_layer)
+        #     cam = rollout[:, 0, 1:]
+        #     return cam
+
         elif method == "transformer_attribution" or method == "grad":
             cams = []
-            for blk in self.blocks:
+
+            for i, blk in enumerate(self.blocks):
                 grad = blk.attn.get_attn_gradients()
                 cam = blk.attn.get_attn_cam()
+
                 cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
                 grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
                 cam = grad * cam
                 cam = cam.clamp(min=0).mean(dim=0)
                 cams.append(cam.unsqueeze(0))
-            rollout = compute_rollout_attention(cams, start_layer=start_layer)
-            cam = rollout[:, 0, 1:]
-            return cam
+
+                # Calcolo dell'attenzione rollout solo fino a questo encoder
+                rollout = compute_rollout_attention(cams, start_layer=start_layer)
+                cam_progressive = rollout[:, 0, 1:]
+                print('i: ', i)
+
+                yield i, cam_progressive  # Restituisce il risultato parziale per questo encoder
+
             
         elif method == "last_layer":
             cam = self.blocks[-1].attn.get_attn_cam()

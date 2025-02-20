@@ -4,11 +4,21 @@ Hacked together by / Copyright 2020 Ross Wightman
 import torch
 import torch.nn as nn
 from einops import rearrange
-from modules.layers_lrp import *
 
-from baselines.ViT.helpers import load_pretrained
-from baselines.ViT.weight_init import trunc_normal_
-from baselines.ViT.layer_helpers import to_2tuple
+
+import sys
+from pathlib import Path
+
+# Percorso assoluto alla cartella "modules" (sali di 2 livelli da ViT/ per raggiungere "Transformer-Explainability/")
+modules_dir = Path(__file__).resolve().parent.parent.parent / "modules"
+sys.path.append(str(modules_dir))
+
+
+from layers_lrp import *
+
+from helpers import load_pretrained
+from weight_init import trunc_normal_
+from layer_helpers import to_2tuple
 
 
 def _cfg(url='', **kwargs):

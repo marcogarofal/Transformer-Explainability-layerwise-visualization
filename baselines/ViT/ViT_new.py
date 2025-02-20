@@ -6,10 +6,13 @@ import torch.nn as nn
 from functools import partial
 from einops import rearrange
 
-from baselines.ViT.helpers import load_pretrained
-from baselines.ViT.weight_init import trunc_normal_
-from baselines.ViT.layer_helpers import to_2tuple
+#from baselines.ViT.helpers import load_pretrained
+from helpers import load_pretrained
+# from baselines.ViT.weight_init import trunc_normal_
+# from baselines.ViT.layer_helpers import to_2tuple
 
+from weight_init import trunc_normal_
+from layer_helpers import to_2tuple
 
 def _cfg(url='', **kwargs):
     return {
